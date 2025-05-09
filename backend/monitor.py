@@ -1,38 +1,37 @@
-# monitor.py
+from playwright.sync_api import sync_playwright
 
-import asyncio
-from playwright.async_api import async_playwright
-import time
-
-LAST_SEEN = None  # To store the last seen tweet
-
-
-async def fetch_latest_tweet(username):
-    global LAST_SEEN
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+def fetch_latest_tweet(username):
+    with sync_playwright() as p:
+        browser = p.chromium.launch_persistent_context(
+            user_data_dir="./user_data",  # Persistent session
+            headless=False,
+            viewport={"width": 1280, "height": 800}
+        )
+        page = browser.pages[0] if browser.pages else browser.new_page()
         try:
-            await page.goto(f'https://twitter.com/{username}', timeout=60000)
-            await page.wait_for_selector('article', timeout=10000)
-            articles = await page.query_selector_all('article')
+            print(f"Opening Twitter profile for @{username}...")
+            page.goto(f"https://twitter.com/{username}", timeout=60000)
+            page.wait_for_selector("article", timeout=15000)
+            articles = page.query_selector_all("article")
 
-            latest_tweet = None
-            for article in articles[:5]:  # Look through the first few tweets
-                text = await article.inner_text()
-                if "Pinned Tweet" in text and latest_tweet is None:
-                    continue  # Skip pinned tweet if it's the first one
-                elif "Pinned Tweet" not in text:
-                    latest_tweet = text
-                    break
+            for i, article in enumerate(articles):
+                html = article.inner_html()
 
-            # Fallback: use pinned tweet if nothing else found
-            if not latest_tweet and articles:
-                latest_tweet = await articles[0].inner_text()
+                if "Pinned Tweet" in html:
+                    continue  # Skip pinned tweet
 
-            return latest_tweet
+                # Skip quote tweets
+                if 'aria-label="Timeline: Conversation"' in html or "Quoted Tweet" in html:
+                    continue
+
+                tweet_parts = article.query_selector_all("div[lang]")
+                tweet = "\n".join(part.inner_text().strip() for part in tweet_parts)
+
+                if tweet.strip():
+                    return tweet
+
+            return None
         except Exception as e:
-            print("Error fetching tweet:", e)
+            print(f"Error fetching tweet: {e}")
         finally:
-            await browser.close()
-    return None
+            browser.close()

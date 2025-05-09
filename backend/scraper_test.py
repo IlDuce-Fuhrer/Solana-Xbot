@@ -1,31 +1,32 @@
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
+import asyncio
 
-def get_latest_tweet(username):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)  # For debugging, set to True later
-        context = browser.new_context(user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/119.0.0.0 Safari/537.36"
-        ))
-        page = context.new_page()
+
+async def fetch_latest_tweet(username):
+    url = f"https://twitter.com/{username}"
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
         try:
-            page.goto(f"https://twitter.com/{username}", timeout=900000)
-            page.wait_for_selector("article", timeout=85000)
-            tweet = page.query_selector("article div[lang]")
-            if tweet:
-                text = tweet.inner_text()
-                print(f"Latest tweet from @{username}: {text}")
-                return text
-            else:
-                print("No tweet found.")
+            print(f"Navigating to {url}...")
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_selector("article", timeout=10000)
+
+            tweets = await page.locator("article").all()
+            if not tweets:
+                print("No tweets found.")
                 return None
+
+            tweet_texts = [await t.inner_text() async for t in tweets[:2]]
+            tweet = tweet_texts[1] if "Pinned Tweet" in tweet_texts[0] else tweet_texts[0]
+            return tweet.strip()
+
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error fetching tweet: {e}")
             return None
         finally:
-            browser.close()
+            await browser.close()
 
 # Example usage
-if __name__ == "__main__":
-    get_latest_tweet("oluwaseyi__7")
+# asyncio.run(fetch_latest_tweet("dulc1x"))
